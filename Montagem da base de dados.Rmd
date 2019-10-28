@@ -1,0 +1,183 @@
+---34 cx 
+title: "Montagem da base de dados"
+output: html_notebook
+---
+```{r include=FALSE}
+library(data.table)
+library(magrittr)
+library(tidyverse)
+library(ffbase)
+```
+Esse script é referente à montagem da base de dados do Saeb que será utilizada para as análises e combinações com informações de outras fontes.
+# INFORMAÇÕES RELEVANTES
+Uma vez que as informações do Fundeb estão disponíveis apenas para nível municipal, a menor granulidade de observação na base do Saeb também será *município*. Como a nota do Saeb é por aluno, será trabalhado a média do município.
+
+Para os anos entre 2007 e 2017, as médias municipais das notas de matemática e português já estão elaboradas pelo próprio responsável pela elaboração das informações - MEC. Já os anos entre 1995 e 2005, há apenas os microdados dos alunos. Sendo assim, as notas médias municipais precisam ser calculadas seguindo a metodologia utilizada pelo próprio MEC.De acordo com a nota técnica referente aos resultados de 2017, "o cálculo das proficiências e médias, a divulgação dos resultados da avaliação também tomou como referência o Censo Escolar 2017, especialmente no que diz respeito à taxa de participação na avaliação. Para ter resultado divulgado, as escolas participantes da *Prova Brasil* devem ter no mínimo 80% de estudantes participantes, enquanto para os *Municípios o percentual mínimo de participação é de 50%*. São considerados participantes os alunos presentes no momento da aplicação o teste (IN_PRESENCA_PROVA = 1) e que estavam declarados no Censo Escolar 2017 (IN_SITUACAO_CENSO = 1). A taxa de participação é a razão entre o total de alunos participantes na Prova Brasil 2017 e o total de alunos declarados no Censo Escolar 2017, que eram o público alvo dessa avaliação".
+
+# MONTAGEM DA BASE DE DADOS
+Ao acessar os microdados referentes ao ano de 1995, notou-se que não há uma variável que consiga relacionar o aluno à sua respectiva escola. Portanto, o intervalo de análise irá cobrir apenas os anos entre 1997-2017.
+
+Apesar de a informação do desempenho médio dos municípios na Prova Brasil estar disponível nos microdados referentes aos anos 2007-17, torna-se necessário fazer o cálculo dessa informação manualmente para todos as edições da avaliação, inclusive nos anos 2007-17, para garantir que os resultados sejam oriundos de um mesmo processo de manipulação de dados, eliminando a possibilidade de serem adotadas meotologias diferentes em diferentes anos para a construção de uma mesma variável.
+
+Com isso, o primeiro passo consiste em encontrar o número total de estudantes no município, de acordo os filtros já descritos. Em seguida, Tem-se que encontrar o número de estudantes que participaram da Prova Brasil. Isso permite encontrar aqueles municípios que apresentam mais de 50% dos seus alunos participantes da Prova Brasil. Por fim, calcula-se a média das notas desses alunos e atribui-se esse resultado ao município.
+
+Nesta seção, será montada a base de dados necessária para a realização da análise.
+
+## NÚMERO TOTAL DE ALUNOS (MATRÍCULAS)
+O número total de alunos para os anos 1997-2005 pode ser extraído diretamente do Censo Escolar. Nos demais anos, é necessário fazer o cruzamento entre as bases MATRÍCULAS, TURMA e ESCOLA.
+
+### Ano 1997
+Identificador da escola (`MASCARA`), ano do censo (`ANO`), código do município (`CODMUNIC`), UF (`SIGLA`), , nome do município (`MUNIC`), dependência administrativa (`DEP`), localização (`LOC`), condição de funcionamento (`CODFUNC`), unidade executora (`UNID_EXEC`), total de matrículas na 4ª série (`VEF224`), total de matrículas na 8ª série (`VEF228`), total de matrículas na 3ª série do ensino médio (`VEM223`) e total de matrículas na 4ª série do ensino médio (`VEM224`)
+
+```{r include=FALSE}
+escolaDF.1997 <- read.csv2("C:\\Users\\Guilherme\\Documents\\Data Science\\Datathon de dados - MEC\\Dados_manipulados\\Censo_escolar\\censo_escolar_1997.csv")
+escolaDF.1997 %<>% select(-c(UNID_EXEC))
+escolaDF.1997 %<>% rename(ID_ESCOLA = MASCARA, COD_MUNIC = CODMUNIC, SIGLA_UF = SIGLA, COD_FUNC = CODFUNC, MAT_4EF = VEF224, MAT_8EF = VEF228, MAT_3EM = VEM223, MAT_4EM = VEM224) 
+```
+
+### Ano 1999
+Os microdados dos anos 1999-2005 apresentaram mudanças nas variáveis disponíveis. Sendo assim, dada a inexistência das variáveis referentes ao número total de matrículas em cada série analisada (como acontece no Censo Escolar 1997), elas foram criadas a partir do somatório do número de matrículas nos turnos diruno e noturno das respectivas séries.
+
+Identificador da escola (`MASCARA`), ano do censo (`ANO`), código do município (`CODMUNIC`), UF (`SIGLA`), , nome do município (`MUNIC`), dependência administrativa (`DEP`), localização (`LOC`), condição de funcionamento (`CODFUNC`), unidade executora (`UNID_EXEC`), total de matrículas na 4ª série (diurno `DEF11F` + noturno `NEF11F`), total de matrículas na 8ª série (diurno `DEF11J` + noturno `NEF11J`), total de matrículas na 3ª série do ensino médio (diurno `DEM11A` + noturno `NEM11A`) e total de matrículas na 4ª série do ensino médio (diurno `DEM11B` + noturno `NEM11B`)
+
+```{r include = FALSE}
+escolaDF.1999 <- read.csv2("C:\\Users\\Guilherme\\Documents\\Data Science\\Datathon de dados - MEC\\Dados_manipulados\\Censo_escolar\\censo_escolar_1999.csv")
+escolaDF.1999 %<>% rename(ID_ESCOLA = MASCARA, COD_MUNIC = CODMUNIC, SIGLA_UF = SIGLA, COD_FUNC = CODFUNC, MAT_4EF_D = DEF11F, MAT_8EF_D = DEF11J, MAT_4EF_N = NEF11F, MAT_8EF_N = NEF11J, MAT_3EM_D = DEM11A, MAT_4EM_D = DEM11B, MAT_3EM_N = NEM11A, MAT_4EM_N = NEM11B) 
+setDT(escolaDF.1999)[, MAT_4EF := MAT_4EF_D + MAT_4EF_N]
+escolaDF.1999[, MAT_8EF := MAT_8EF_D + MAT_8EF_N]
+escolaDF.1999[, MAT_3EM := MAT_3EM_D + MAT_3EM_N]
+escolaDF.1999[, MAT_4EM := MAT_4EM_D + MAT_4EM_N]
+escolaDF.1999 %<>% select(-c(MAT_4EF_D, MAT_4EF_N, MAT_8EF_D, MAT_8EF_N, MAT_3EM_D, MAT_3EM_N, MAT_4EM_D, MAT_4EM_N))
+```
+
+### Ano 2001
+Identificador da escola (`MASCARA`), ano do censo (`ANO`), código do município (`CODMUNIC`), UF (`SIGLA`), , nome do município (`MUNIC`), dependência administrativa (`DEP`), localização (`LOC`), condição de funcionamento (`CODFUNC`), unidade executora (`UNID_EXEC`), total de matrículas na 4ª série (diurno `DEF11F` + noturno `NEF11F`), total de matrículas na 8ª série (diurno `DEF11J` + noturno `NEF11J`), total de matrículas na 3ª série do ensino médio (diurno `DEM11A` + noturno `NEM11A`) e total de matrículas na 4ª série do ensino médio (diurno `DEM11B` + noturno `NEM11B`)
+```{r include = FALSE}
+escolaDF.2001 <- read.csv2("C:\\Users\\Guilherme\\Documents\\Data Science\\Datathon de dados - MEC\\Dados_manipulados\\Censo_escolar\\censo_escolar_2001.csv")
+escolaDF.2001 %<>% rename(ID_ESCOLA = MASCARA, COD_MUNIC = CODMUNIC, SIGLA_UF = SIGLA, COD_FUNC = CODFUNC, MAT_4EF_D = DEF11F, MAT_8EF_D = DEF11J, MAT_4EF_N = NEF11F, MAT_8EF_N = NEF11J, MAT_3EM_D = DEM11A, MAT_4EM_D = DEM11B, MAT_3EM_N = NEM11A, MAT_4EM_N = NEM11B) 
+setDT(escolaDF.2001)[, MAT_4EF := MAT_4EF_D + MAT_4EF_N]
+escolaDF.2001[, MAT_8EF := MAT_8EF_D + MAT_8EF_N]
+escolaDF.2001[, MAT_3EM := MAT_3EM_D + MAT_3EM_N]
+escolaDF.2001[, MAT_4EM := MAT_4EM_D + MAT_4EM_N]
+escolaDF.2001 %<>% select(-c(MAT_4EF_D, MAT_4EF_N, MAT_8EF_D, MAT_8EF_N, MAT_3EM_D, MAT_3EM_N, MAT_4EM_D, MAT_4EM_N))
+```
+
+### Ano 2003
+Identificador da escola (`MASCARA`), ano do censo (`ANO`), código do município (`CODMUNIC`), UF (`SIGLA`), , nome do município (`MUNIC`), dependência administrativa (`DEP`), localização (`LOC`), condição de funcionamento (`CODFUNC`), unidade executora (`UNID_EXEC`), total de matrículas na 4ª série (diurno `DEF11F` + noturno `NEF11F`), total de matrículas na 8ª série (diurno `DEF11J` + noturno `NEF11J`), total de matrículas na 3ª série do ensino médio (diurno `DEM11A` + noturno `NEM11A`) e total de matrículas na 4ª série do ensino médio (diurno `DEM11B` + noturno `NEM11B`)
+
+```{r include = FALSE}
+escolaDF.2003 <- read.csv2("C:\\Users\\Guilherme\\Documents\\Data Science\\Datathon de dados - MEC\\Dados_manipulados\\Censo_escolar\\censo_escolar_2003.csv")
+escolaDF.2003 %<>% rename(ID_ESCOLA = MASCARA, COD_MUNIC = CODMUNIC, SIGLA_UF = SIGLA, COD_FUNC = CODFUNC, MAT_4EF_D = DEF11F, MAT_8EF_D = DEF11J, MAT_4EF_N = NEF11F, MAT_8EF_N = NEF11J, MAT_3EM_D = DEM11A, MAT_4EM_D = DEM11B, MAT_3EM_N = NEM11A, MAT_4EM_N = NEM11B) 
+setDT(escolaDF.2003)[, MAT_4EF := MAT_4EF_D + MAT_4EF_N]
+escolaDF.2003[, MAT_8EF := MAT_8EF_D + MAT_8EF_N]
+escolaDF.2003[, MAT_3EM := MAT_3EM_D + MAT_3EM_N]
+escolaDF.2003[, MAT_4EM := MAT_4EM_D + MAT_4EM_N]
+escolaDF.2003 %<>% select(-c(MAT_4EF_D, MAT_4EF_N, MAT_8EF_D, MAT_8EF_N, MAT_3EM_D, MAT_3EM_N, MAT_4EM_D, MAT_4EM_N))
+```
+
+### Ano 2005
+Identificador da escola (`MASCARA`), ano do censo (`ANO`), código do município (`CODMUNIC`), UF (`SIGLA`), , nome do município (`MUNIC`), dependência administrativa (`DEP`), localização (`LOC`), condição de funcionamento (`CODFUNC`), unidade executora (`UNID_EXEC`), total de matrículas na 4ª série (diurno `DEF11F` + noturno `NEF11F`), total de matrículas na 8ª série (diurno `DEF11J` + noturno `NEF11J`), total de matrículas na 3ª série do ensino médio (diurno `DEM11A` + noturno `NEM11A`) e total de matrículas na 4ª série do ensino médio (diurno `DEM11B` + noturno `NEM11B`)
+
+```{r include = FALSE}
+escolaDF.2005 <- read.csv2("C:\\Users\\Guilherme\\Documents\\Data Science\\Datathon de dados - MEC\\Dados_manipulados\\Censo_escolar\\censo_escolar_2005.csv")
+escolaDF.2005 %<>% rename(ID_ESCOLA = MASCARA, COD_MUNIC = CODMUNIC, SIGLA_UF = SIGLA, COD_FUNC = CODFUNC, MAT_4EF_D = DEF11F, MAT_8EF_D = DEF11J, MAT_4EF_N = NEF11F, MAT_8EF_N = NEF11J, MAT_3EM_D = DEM11A, MAT_4EM_D = DEM11B, MAT_3EM_N = NEM11A, MAT_4EM_N = NEM11B) 
+setDT(escolaDF.2005)[, MAT_4EF := MAT_4EF_D + MAT_4EF_N]
+escolaDF.2005[, MAT_8EF := MAT_8EF_D + MAT_8EF_N]
+escolaDF.2005[, MAT_3EM := MAT_3EM_D + MAT_3EM_N]
+escolaDF.2005[, MAT_4EM := MAT_4EM_D + MAT_4EM_N]
+escolaDF.2005 %<>% select(-c(MAT_4EF_D, MAT_4EF_N, MAT_8EF_D, MAT_8EF_N, MAT_3EM_D, MAT_3EM_N, MAT_4EM_D, MAT_4EM_N))
+```
+
+### Anos 2007-13
+Os microdados dos censos escolares 2007-13 apresentam uma estrutura diferente das versões do ano anterior. Agora, as informações vem separadas por escola, matrícula e turma e as relações entre elas é realizada de forma semelhante à uma consulta SQL. Com isso, a manipulação de arquivos com milhões de observações traz o problema da falta de memória. Portanto, optou-se por utilizar o pacote `ffbase` (sugerido no próprio arquivo Leia-me do Censo Escolar). 
+Sendo assim, o número de matrículas do município é encontrado a partir do cruzamento das matrículas de cada série analisada com as respectivas turmas e, em seguida, com as suas respectivas escolas para, finalmente, associar o resultado ao município.
+
+#### Base matrículas
+```{r warning=FALSE, include=FALSE}
+setwd("C:\\Users\\Guilherme\\Documents\\Data Science\\Datathon de dados - MEC\\Dados_originais\\Censo_escolar\\TEMP")
+dir_save <- paste0("C:\\Users\\Guilherme\\Documents\\Data Science\\Datathon de dados - MEC\\Dados_originais\\Censo_escolar\\TEMP", "\\temp_ff")
+arquivos <- list.files()
+for(i in 1:length(arquivos)){
+  read.csv2.ffdf(file = arquivos[i], sep = "|", header = TRUE, colClasses = NA, first.rows=100000, next.rows = 50000) %>% 
+    subset.ffdf(select = c("ANO_CENSO", "PK_COD_MATRICULA", "FK_COD_ALUNO", "FK_COD_MOD_ENSINO", "FK_COD_ETAPA_ENSINO", "PK_COD_TURMA", "COD_UNIFICADA", "PK_COD_ENTIDADE")) %>% 
+    save.ffdf(dir = paste0(dir_save, "\\", arquivos[i], sep=""), overwrite = TRUE) %>%
+}
+```
+
+Matrículas 2007
+```{r}
+matriculasDF.2007 %<>% rename(ANO = ANO_CENSO, ID_ESCOLA = NO_ENTIDADE, COD_FUNC = DESC_SITUACAO_FUNCIONAMENTO, UF = FK_COD_ESTADO, SIGLA_UF = SIGLA, COD_MUNIC = FK_COD_MUNICIPIO, DEP = ID_DEPENDENCIA_ADM, LOC = ID_LOCALIZACAO)
+```
+
+Matrículas 2009
+Matrículas 2011
+Matrículas 2013
+
+### Anos 2015-17
+Os microdados do Censo Escolar 2015-17 apresentaram mudanças no nome das variáveis, tornando necessário um ajuste no script de importação
+```{r warning=FALSE, include=FALSE}
+setwd("C:\\Users\\Guilherme\\Documents\\Data Science\\Datathon de dados - MEC\\Dados_originais\\Censo_escolar\\TEMP")
+dir_save <- paste0("C:\\Users\\Guilherme\\Documents\\Data Science\\Datathon de dados - MEC\\Dados_originais\\Censo_escolar\\TEMP", "\\temp_ff")
+arquivos <- list.files()
+inicio <- proc.time()
+for(i in 1:length(arquivos)){
+  read.csv2.ffdf(file = arquivos[i], sep = "|", header = TRUE, colClasses = NA, first.rows=100000, next.rows = 50000) %>% 
+    subset.ffdf(select = c("NU_ANO_CENSO", "ID_MATRICULA", "COD_PESSOA_FISICA", "TP_ETAPA_ENSINO", "ID_TURMA", "TP_UNIFICADA", "CO_ENTIDADE")) %>% 
+    save.ffdf(dir = paste0(dir_save, "\\", arquivos[i], sep=""), overwrite = TRUE) %>%
+}
+tempo <- proc.time() - inicio
+```
+
+```{r}
+teste_ff <- read.csv2.ffdf(file = "C:\\Users\\Guilherme\\Documents\\Data Science\\Datathon de dados - MEC\\Dados_originais\\Censo_escolar\\TEMP\\MATRICULA_CO2015.csv", sep = "|", header = TRUE, colClasses = NA, first.rows=100000, next.rows = 50000)
+teste_ff <- subset.ffdf(teste_ff, select = c("NU_ANO_CENSO", "ID_MATRICULA", "CO_PESSOA_FISICA", "TP_ETAPA_ENSINO", "ID_TURMA", "TP_UNIFICADA", "CO_ENTIDADE"))
+save.ffdf(teste_ff, dir = "C:\\Users\\Guilherme\\Documents\\Data Science\\Datathon de dados - MEC\\Dados_originais\\Censo_escolar\\TEMP\\temp_ff\\MATRICULA_CO2015")
+```
+
+
+```{r}
+setwd("C:\\Users\\Guilherme\\Documents\\Data Science\\Datathon de dados - MEC\\Dados_originais\\Censo_escolar\\microdados_censo_escolar_2007\\DADOS")
+escolasDF.2007 <- read.csv2.ffdf(file = "ESCOLAS.csv", sep = "|", first.rows=100000)
+escolasDF.2007 <- escolasDF.2007[, 1:10]
+escolasDF.2007 %<>% rename(ANO = ANO_CENSO, ID_ESCOLA = NO_ENTIDADE, COD_FUNC = DESC_SITUACAO_FUNCIONAMENTO, UF = FK_COD_ESTADO, SIGLA_UF = SIGLA, COD_MUNIC = FK_COD_MUNICIPIO, DEP = ID_DEPENDENCIA_ADM, LOC = ID_LOCALIZACAO)
+#save.ffdf(escolasDF.2007, dir="C:\\Users\\Guilherme\\Documents\\Data Science\\Datathon de dados - MEC\\Dados_manipulados\\Censo_escolar")
+# load.ffdf()
+# ffwhich()
+# ffdfappend()
+```
+
+```{r warning=FALSE, include=FALSE}
+setwd("C:\\Users\\Guilherme\\Documents\\Data Science\\Datathon de dados - MEC\\Dados_originais\\Censo_escolar\\TEMP")
+dir_save <- paste0("C:\\Users\\Guilherme\\Documents\\Data Science\\Datathon de dados - MEC\\Dados_originais\\Censo_escolar\\TEMP", "\\temp_ff")
+arquivos <- list.files()
+inicio <- proc.time()
+for(i in 2:length(arquivos)){
+  read.csv2.ffdf(file = arquivos[i], sep = "|", header = TRUE, colClasses = NA, first.rows=100000, next.rows = 50000) %>% 
+    subset.ffdf(select = c("ANO_CENSO", "PK_COD_MATRICULA", "FK_COD_ALUNO", "FK_COD_MOD_ENSINO", "FK_COD_ETAPA_ENSINO", "PK_COD_TURMA", "COD_UNIFICADA", "PK_COD_ENTIDADE")) %>% 
+    save.ffdf(dir = paste0(dir_save, "\\", arquivos[i], sep=""), overwrite = TRUE) %>%
+    rm()
+}
+tempo <- proc.time() - inicio
+#2015 +
+#c("NU_ANO_CENSO", "ID_MATRICULA", "COD_PESSOA_FISICA", "TP_ETAPA_ENSINO", "ID_TURMA", "TP_UNIFICADA", "CO_ENTIDADE")
+```
+
+## Seleção dos municípios dos quais as notas de proficiência de seus alunos serão consideradas para o cálculo da média municipal
+Conforme dito na nota técnica, são analisados apenas os municípios que apresentam mais de 50% de seus alunos como participantes da Prova Brasil, em cada uma das edições da Prova Brasil.
+
+Base aluno
+Identificador da escola (`MASCARA`), ano da máscara (`ANO_MASCARA`), ano da Prova Brasil (`ANO`), série (`SERIE`), disciplina avaliada (`DISC`), nota do aluno (`PROFIC`), peso amostral (`PESO_AC`)
+
+Para isso, precisamos das seguintes informações: número total de alunos no município (somatório do indentificador `ALUNO`), as notas em matemática e português desses alunos (`PROFIC` e `DISC`),  e a identificação se o aluno particiou ou não da prova.
+Região (`REGIAO`), rede pública ou particular (`REDE`)
+
+```{r}
+setwd("C:\\Users\\Guilherme\\Documents\\Data Science\\Datathon de dados - MEC\\Dados_originais\\Censo_escolar\\microdados_censo_escolar_2007\\DADOS")
+escolasDF.2007 <- read.csv2.ffdf(file = "ESCOLAS.csv", sep = "|", first.rows=100000)
+escolasDF.2007 <- escolasDF.2007[, 1:10]
+escolasDF.2007 %<>% rename(ANO = ANO_CENSO, ID_ESCOLA = NO_ENTIDADE, COD_FUNC = DESC_SITUACAO_FUNCIONAMENTO, UF = FK_COD_ESTADO, SIGLA_UF = SIGLA, COD_MUNIC = FK_COD_MUNICIPIO, DEP = ID_DEPENDENCIA_ADM, LOC = ID_LOCALIZACAO)
+#save.ffdf(escolasDF.2007, dir="C:\\Users\\Guilherme\\Documents\\Data Science\\Datathon de dados - MEC\\Dados_manipulados\\Censo_escolar")
+# load.ffdf()
+# ffwhich()
+# ffdfappend()
+```
